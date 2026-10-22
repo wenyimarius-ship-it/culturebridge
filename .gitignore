@@ -1,0 +1,12 @@
+
+.env
+.env.*
+!.env.example
+
+.streamlit/secrets.toml
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+audience_feedback.csv
+fact_review_log.csv
