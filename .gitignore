@@ -10,3 +10,6 @@ __pycache__/
 venv/
 audience_feedback.csv
 fact_review_log.csv
+# 本地运行产生的数据文件
+generations.csv
+.pytest_cache/
