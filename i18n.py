@@ -99,7 +99,7 @@ STRINGS = {
         "none_translation": "暂无翻译。",
         "view_rationale": "💡 查看文化表达思路",
         "none_rationale": "暂无说明。",
-        "view_model_review": "🧾 查看模型提出的核实建议",
+        "view_model_review": "🧾 查看草稿的核实建议",
         "none_review": "暂无建议。",
 
         # ---- 标签页 ----
@@ -184,7 +184,7 @@ STRINGS = {
         "admin_no_records": "暂无记录。",
         "admin_wrong": "口令不正确。",
 
-        "footer": "CultureBridge Demo · AI 辅助跨文化传播原型。"
+        "footer": "CultureBridge · AI 辅助跨文化传播原型。"
                   "事实核验需要人工判断；受众评分是自愿提供的反馈。",
     },
 
@@ -236,9 +236,9 @@ STRINGS = {
                             "sent it to you.",
         "tester_title": "Quick feedback on a short post about Chinese tea culture",
         "tester_intro": "This takes about a minute: read the post below, then "
-                        "answer three short questions. Your answers are "
+                        "rate Interest, Understanding and Respect (plus optional learning intent). Your answers are "
                         "anonymous and are only used to improve the content. "
-                        "The post is an AI-assisted draft.",
+                        "The post is an draft; its generation mode is labelled below.",
         "tester_form_title": "What did you think?",
         "tester_footer": "CultureBridge is an AI-assisted cross-cultural "
                          "communication prototype. Ratings are voluntary and "
@@ -304,7 +304,7 @@ STRINGS = {
         "none_translation": "No translation yet.",
         "view_rationale": "💡 Cultural framing notes",
         "none_rationale": "No notes yet.",
-        "view_model_review": "🧾 Claims the model suggests checking",
+        "view_model_review": "🧾 Claims suggested for review",
         "none_review": "No suggestions yet.",
 
         # ---- Tabs ----
@@ -406,12 +406,93 @@ STRINGS = {
         "admin_no_records": "No records yet.",
         "admin_wrong": "Incorrect password.",
 
-        "footer": "CultureBridge Demo · an AI-assisted cross-cultural "
+        "footer": "CultureBridge · an AI-assisted cross-cultural "
                   "communication prototype. Fact checking needs human "
                   "judgement; audience ratings are voluntary feedback.",
     },
 }
 
+
+# Phase 3.4 additions and precise mode labels.
+STRINGS["zh"].update(
+{'mode_label': '生成模式',
+ 'edit_context_stale': '文案已经手动修改：翻译、表达思路与核实清单仍对应原稿，须重新检查。',
+ 'mode_ai': '真实 AI · DeepSeek',
+ 'mode_demo': 'Demo · 人工示例',
+ 'demo_notice': 'Demo 使用预先编写的示例，不调用 API；角度、平台和风格会选择对应模板。补充偏好与 AI 改写不适用于 Demo，可手动编辑。',
+ 'demo_refine': 'Demo 不调用模型，请手动编辑或重新生成示例。',
+ 'result_demo': 'Demo 示例 · 人工编写，非实时 AI，尚未核验。',
+ 'result_ai': '真实 AI 生成草稿 · 尚未核验；手动修改不会自动完成审核。',
+ 'feedback_context': 'Audience Lab：评分由当前用户或受邀读者输入，也可以用于模拟练习，不是经验证的真实市场数据。',
+ 'export_own': '导出本次会话的反馈 CSV',
+ 'export_warning': '免费轻量保存：下载本次会话的反馈到自己的设备。刷新、断线或服务器重启可能丢失未导出的会话数据；服务器 CSV 不保证长期保存。',
+ 'q_respect': '3. 你觉得这条短帖是否尊重所介绍的文化？',
+ 'q_respect_help': '1 = 很不尊重，5 = 很尊重',
+ 'q_learn_more': '4. 你是否愿意进一步了解中国茶文化？（补充维度）',
+ 'metric_respect': '平均文化尊重感',
+ 'respect_legacy': '旧反馈没有 Respect 评分，不计入该项平均分；0 表示尚无评分。',
+ 'background_title': '文化背景与可能的误读',
+ 'background_note': '编辑背景说明，待人工核验。以下来源是核查起点，不是逐句证据。',
+ 'strategy_title': '内容表达策略',
+ 'strategy_note': '表达建议，不属于已核验事实；手动改写后请重新评估其适用性。',
+ 'verify_blocked': '不能保存为已核验：请确认所有条目并选择实际查阅的来源。清单为空或手动改写后，还须用备注记录对当前文本的补充核验。',
+ 'share_url_missing': '尚未配置此部署的公开地址，暂不生成测试链接；可使用下方反馈表单与导出。',
+ 'no_api_key': '缺少模型密钥，真实 AI 不可用。请选择 Demo 继续体验，或由部署者在服务端配置 DEEPSEEK_API_KEY。',
+ 'err_other': '模型调用失败，请重试或切换 Demo；本次未生成新结果。',
+ 'post_heading': '02 / Generated Post · 英文短帖',
+ 'step1_title': '01 / Create a Post · 创建短帖',
+ 'tab_review': '03 / Cultural Lens · 文化视角',
+ 'tab_test': '04 / Audience Lab · 受众实验',
+ 'topic_label': '文化主题',
+ 'tea_topic': '中国茶文化',
+ 'generate_caption': '再次点击可重新生成；真实模型失败时不会自动冒充 Demo。'}
+)
+STRINGS["en"].update(
+{'mode_label': 'Generation mode',
+ 'edit_context_stale': 'The post was edited by hand. Translation, framing and claims still describe the original draft; review them again.',
+ 'mode_ai': 'Live AI · DeepSeek',
+ 'mode_demo': 'Demo · authored examples',
+ 'demo_notice': 'Demo uses authored examples, without an API. Angle, platform and style '
+                'select a template. Extra ideas and AI revision are not processed; you can '
+                'edit by hand.',
+ 'demo_refine': 'Demo does not call a model. Edit by hand or generate another example.',
+ 'result_demo': 'Demo example · authored, not live AI, not verified.',
+ 'result_ai': 'Live AI draft · not verified. Manual edits still need review.',
+ 'feedback_context': 'Audience Lab: ratings are entered by the current user or invited '
+                     'readers and may be simulated practice. They are not validated market '
+                     'data.',
+ 'export_own': 'Export this session’s feedback CSV',
+ 'export_warning': 'Free lightweight storage: download your session feedback to your device. '
+                   'Refreshing, disconnecting or restarting may lose unexported session data. '
+                   'Server CSV files are not reliable long-term storage.',
+ 'q_respect': '3. How respectfully does this post represent the culture?',
+ 'q_respect_help': '1 = very disrespectful, 5 = very respectful',
+ 'q_learn_more': '4. Would you like to learn more about Chinese tea culture? (additional)',
+ 'metric_respect': 'Avg. respect',
+ 'respect_legacy': 'Older feedback without Respect is excluded from this average; 0 means no '
+                   'ratings yet.',
+ 'background_title': 'Cultural background and possible misunderstandings',
+ 'background_note': 'Editorial background, awaiting human review. The sources below are '
+                    'starting points, not evidence for every sentence.',
+ 'strategy_title': 'Content strategy',
+ 'strategy_note': 'Editorial suggestions, not verified facts. Reassess after manual edits.',
+ 'verify_blocked': 'Cannot save as verified: confirm every claim and select sources actually '
+                   'checked. If the checklist is empty or the text was edited, add notes '
+                   'documenting checks of the current text.',
+ 'share_url_missing': 'This deployment has no public URL configured. Use the feedback form '
+                      'and export below until APP_URL is configured.',
+ 'no_api_key': 'Live AI is unavailable without a model key. Choose Demo to continue, or '
+               'configure DEEPSEEK_API_KEY on the server.',
+ 'err_other': 'The model call failed. Retry or choose Demo; no new result was generated.',
+ 'post_heading': '02 / Generated Post',
+ 'step1_title': '01 / Create a Post',
+ 'tab_review': '03 / Cultural Lens',
+ 'tab_test': '04 / Audience Lab',
+ 'topic_label': 'Cultural topic',
+ 'tea_topic': 'Chinese tea culture',
+ 'generate_caption': 'Click again to regenerate. Model failures never silently turn into Demo '
+                     'results.'}
+)
 
 def translate(lang, key, **kwargs):
     """取文案；语言缺失时退回中文，键缺失时返回键名并记录。"""

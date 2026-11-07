@@ -37,7 +37,8 @@ def test_local_reuses_existing_header(tmp_path):
                                         "understanding": 2, "learn_more": 3})
     with open(f, encoding="utf-8-sig", newline="") as fh:
         row = next(csv.DictReader(fh))
-    assert "topic" not in row and row["interest"] == "1" and row["timestamp"]
+    assert row["topic"] == "x" and row["interest"] == "1" and row["timestamp"]
+    assert row["respect"] == ""
 
 
 def test_local_count_today_counts_only_generate_and_refine(tmp_path):
@@ -153,3 +154,15 @@ def test_supabase_list_feedback_filters_by_version():
     assert sess.calls[0][2]["params"]["post_version"] == "eq.v1-aaaaaa"
     s.list_feedback()
     assert "post_version" not in sess.calls[1][2]["params"]
+
+
+def test_legacy_csv_migration_preserves_rows_and_respect(tmp_path):
+    path = tmp_path / "audience_feedback.csv"
+    path.write_text('timestamp,post_version,interest,understanding,learn_more,comment\nold,v-old,3,4,5,original\n', encoding='utf-8-sig')
+    store = LocalStore(tmp_path)
+    store.save_feedback({'post_version': 'v-new', 'respect': 5, 'interest': 4})
+    old, new = store.list_feedback()
+    assert old['comment'] == 'original' and old['respect'] == ''
+    assert new['respect'] == '5' and new['timestamp']
+    store.save_feedback({'post_version': 'v-third', 'respect': 2})
+    assert len(store.list_feedback()) == 3

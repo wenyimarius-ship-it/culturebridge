@@ -406,6 +406,7 @@ def summarise_by_version(rows):
             "interest": mean_score(items, "interest"),
             "understanding": mean_score(items, "understanding"),
             "learn_more": mean_score(items, "learn_more"),
+            "respect": mean_score(items, "respect"),
         }
         for version, items in groups.items()
     ]

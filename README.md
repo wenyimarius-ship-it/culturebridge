@@ -4,7 +4,7 @@
 
 CultureBridge 是一个面向英国年轻职场人、以中国茶文化为切入点的 AI 跨文化内容共创原型。它不是"一键生成文案"的工具，而是一条把**内容生成 → 文化审核 → 受众反馈**串起来的工作流：AI 负责起草，人负责判断文化事实，目标读者负责告诉你这段话到底有没有读懂、愿不愿意了解更多。
 
-**在线演示：** https://culturebridge-dwbxqchgzdremscutzk5eh.streamlit.app/
+**历史演示地址（本轮未验证部署）：** https://culturebridge-dwbxqchgzdremscutzk5eh.streamlit.app/
 
 <!--
 截图放这里（建议 3 张：生成页、事实审核页、受众测试页），放到 docs/screenshots/ 后取消注释：
@@ -15,6 +15,18 @@ CultureBridge 是一个面向英国年轻职场人、以中国茶文化为切入
 -->
 
 ---
+
+## Phase 3.4：运行与部署准备
+
+- 保留原有生成、编辑、改写、翻译、双语、审核、测试链接、反馈概览与管理员功能。
+- 无密钥默认进入明确标记的 **Demo 人工示例模式**，支持 5 个角度 × 2 个平台 × 3 种风格。自由文本偏好和模型改写只适用于真实 AI；Demo 可以手动编辑。API 报错不会被伪装成成功。
+- **Cultural Lens** 补充按角度组织的文化背景、表达策略与误读提醒。背景及来源链接不等于已核验事实；核验由用户记录，不由程序自动宣称。
+- **Audience Lab** 增加 Respect，保留历史了解意愿维度。反馈来自用户输入或模拟练习，不是已验证市场数据。任何用户可导出自己本次会话的 CSV；管理员仍可导出服务器原始记录。
+- 服务器 CSV 仅临时保存；免费轻量方案是**立即导出到用户设备**。未导出的会话数据不保证跨刷新、断线保存。不强制使用付费服务；可选 Supabase 用于跨访客长期收集。
+- 返回 [Ember Lab](https://lab.mariustang.com) 的链接已加入。未修改 Ember 主站或 Ember Lab 仓库。
+- Python **3.12**；运行依赖固定于 `requirements.lock`，由 `requirements.txt` 引入。入口仍为 `app.py`。
+
+详见 [部署、变量、持久化和接入步骤](docs/deployment.md) 与 [实际验证记录](docs/phase-3.4-validation.md)。本分支准备完成不代表新版本已上线。
 
 ## 项目背景
 
@@ -56,17 +68,17 @@ CultureBridge 把这三件事做成一个可以反复迭代的流程，并且把
 **文化事实审核**
 - 基于关键词的风险提示（绝对化表达、起源/"最早"说法、科学与健康声明、异域化词汇等）。**这只是提示，不是事实核查。**
 - 把模型列出的"需要核实的内容"拆成**逐条勾选的清单**，并记录实际核对了哪些来源。
-- 审核记录会保存"已确认 / 仍待核实"的条目；如果还有未确认条目，却把状态标成"已人工核验"，页面会警告。
+- 审核记录会保存"已确认 / 仍待核实"的条目；未确认所有条目或未选择来源时，不能保存为"已人工核验"；手动编辑会重置审核控件，补充核验须写入备注。
 - 审核状态按版本区分，重新生成或修改后不会沿用上一版的结论。
 
 **受众测试**
-- 一键生成**测试链接**（`/?t=<版本号>`）。目标读者打开后看到的是一个**英文页面**：一条短帖 + 三个评分问题 + 两个选填问题，约 1 分钟。
+- 一键生成**测试链接**（`/?t=<版本号>`）。目标读者打开后看到的是一个**英文页面**：一条短帖 + Interest / Understanding / Respect 三个核心评分及了解意愿补充评分 + 两个选填问题，约 1 分钟。
 - 评分对应的是**修改后的那一版**短帖，原文随反馈一起保存，之后改动不会让历史数据对不上。
 - 也支持当面测试：直接在创作者页面里填写。
 - 匿名，提交前需勾选同意。
 
 **反馈概览**
-- 平均兴趣度 / 理解度 / 了解意愿，可切换"全部版本 / 仅当前版本"，并提供各版本对比。
+- 平均兴趣度 / 理解度 / 文化尊重感 / 了解意愿，可切换"全部版本 / 仅当前版本"，并提供各版本对比。
 - 样本量很小时会明确提示"仅供迭代参考"。
 
 **其他**
@@ -79,10 +91,10 @@ CultureBridge 把这三件事做成一个可以反复迭代的流程，并且把
 ```bash
 git clone https://github.com/wenyimarius-ship-it/culturebridge.git
 cd culturebridge
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3.12 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env        # 然后填写 DEEPSEEK_API_KEY
+cp .env.example .env        # 可选：仅真实 AI 需要填写 DEEPSEEK_API_KEY
 streamlit run app.py
 ```
 
@@ -94,7 +106,7 @@ streamlit run app.py
 
 | 键 | 必填 | 说明 |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | 是 | 模型 API Key（也可用 `OPENAI_API_KEY`，需兼容 OpenAI 接口） |
+| `DEEPSEEK_API_KEY` | 仅真实 AI | DeepSeek 密钥；旧变量名 `OPENAI_API_KEY` 仍兼容，但请求始终发往 DeepSeek，并不切换为 OpenAI 服务 |
 | `ADMIN_KEY` | 否 | 管理员口令；不设置则页面里看不到原始反馈 |
 | `SUPABASE_URL` / `SUPABASE_KEY` | 否 | 两项都填才启用持久存储；`SUPABASE_KEY` 必须是**服务端密钥** |
 | `APP_URL` | 否 | 应用公开网址，用于拼接测试链接 |

@@ -4,6 +4,7 @@ import hmac
 import html
 import inspect
 import threading
+import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -22,6 +23,7 @@ from openai import (
 import cb_core as core
 from cb_store import make_store
 from i18n import translate
+from cb_demo import demo_result, LENS
 
 
 # =====================================================
@@ -69,9 +71,7 @@ SUPABASE_URL = get_secret("SUPABASE_URL")
 SUPABASE_KEY = get_secret("SUPABASE_KEY")
 
 # 应用公开网址，用来拼接受众测试链接
-APP_URL = get_secret(
-    "APP_URL", "https://culturebridge-dwbxqchgzdremscutzk5eh.streamlit.app"
-)
+APP_URL = get_secret("APP_URL", "")
 
 # 额度保护：每个访问会话上限 + 全站每日上限
 MAX_PER_SESSION = get_int_secret("SESSION_LIMIT", 15)
@@ -195,6 +195,7 @@ tester_version = st.query_params.get("t")
 
 # 受众测试页默认英文；创作者界面默认中文
 st.session_state.setdefault("ui_lang", "en" if tester_version else "zh")
+st.markdown("[← Ember Lab](https://lab.mariustang.com)")
 
 
 def language_selector():
@@ -346,11 +347,21 @@ def render_copy_button(text):
 
         button.addEventListener("click", async () => {{
             try {{
-                await navigator.clipboard.writeText(postText);
+                if (navigator.clipboard) {{
+                    await navigator.clipboard.writeText(postText);
+                }} else {{
+                    throw new Error("Clipboard unavailable");
+                }}
                 button.innerText = labels.done;
                 status.innerText = labels.hint;
             }} catch (e) {{
-                status.innerText = labels.fail;
+                const area = document.createElement("textarea");
+                area.value = postText;
+                document.body.appendChild(area);
+                area.select();
+                const copied = document.execCommand("copy");
+                area.remove();
+                status.innerText = copied ? labels.done : labels.fail;
             }}
         }});
         </script>
@@ -441,14 +452,10 @@ class ModelError(Exception):
 
 def call_model(user_prompt, temperature=0.7):
     """调用模型，返回原始文本；失败时抛出带错误码的 ModelError。"""
-    client = OpenAI(
-        api_key=API_KEY,
-        base_url=API_BASE_URL,
-        timeout=60.0,
-        max_retries=1,
-    )
-
     try:
+        client = OpenAI(
+            api_key=API_KEY, base_url=API_BASE_URL, timeout=60.0, max_retries=1,
+        )
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -457,6 +464,7 @@ def call_model(user_prompt, temperature=0.7):
             ],
             temperature=temperature,
         )
+        text = (response.choices[0].message.content or "").strip()
     except AuthenticationError as e:
         code = "auth"
         error = e
@@ -473,12 +481,15 @@ def call_model(user_prompt, temperature=0.7):
         code = "other"
         error = e
     else:
-        text = (response.choices[0].message.content or "").strip()
         if not text:
             raise ModelError("empty")
+        if "【English Post】" not in text or not core.clean_block(
+            text.split("【English Post】", 1)[1].split("【中文翻译】", 1)[0]
+        ):
+            raise ModelError("other")
         return text
 
-    print(f"CultureBridge API error: {type(error).__name__}: {error}")
+    print(f"CultureBridge API error: {type(error).__name__}")
     raise ModelError(code) from error
 
 
@@ -499,6 +510,10 @@ def render_feedback_form(form_key, resolve):
         understanding = st.slider(
             t("q_understanding"), min_value=1, max_value=5, value=3,
             help=t("q_understanding_help"),
+        )
+        respect = st.slider(
+            t("q_respect"), min_value=1, max_value=5, value=3,
+            help=t("q_respect_help"),
         )
         learn_more = st.slider(
             t("q_learn_more"), min_value=1, max_value=5, value=3,
@@ -525,26 +540,31 @@ def render_feedback_form(form_key, resolve):
 
     version, post_text, topic, platform = resolve()
 
+    row = {
+        "post_version": version, "topic": topic, "platform": platform,
+        "lang": st.session_state.get("ui_lang", "zh"), "post_text": post_text,
+        "interest": interest, "understanding": understanding, "respect": respect,
+        "learn_more": learn_more, "confusing_part": confusing.strip(),
+        "comment": comment.strip(),
+    }
+    # Keep a private session copy even if the server's temporary disk fails.
+    st.session_state.setdefault("cb_own_feedback", []).append(row)
     try:
-        store.save_feedback(
-            {
-                "post_version": version,
-                "topic": topic,
-                "platform": platform,
-                "lang": st.session_state.get("ui_lang", "zh"),
-                "post_text": post_text,
-                "interest": interest,
-                "understanding": understanding,
-                "learn_more": learn_more,
-                "confusing_part": confusing.strip(),
-                "comment": comment.strip(),
-            }
-        )
+        store.save_feedback(row)
         load_feedback.clear()
         st.success(t("feedback_thanks"))
     except Exception as e:
-        print(f"CultureBridge feedback save error: {type(e).__name__}: {e}")
+        print(f"CultureBridge feedback save error: {type(e).__name__}")
         st.error(t("feedback_save_failed"))
+
+
+def feedback_export():
+    own = st.session_state.get("cb_own_feedback", [])
+    st.caption(t("feedback_context"))
+    if own:
+        st.download_button(t("export_own"), core.rows_to_csv_bytes(own),
+                           file_name="my-culturebridge-feedback.csv", mime="text/csv")
+    st.caption(t("export_warning"))
 
 
 # =====================================================
@@ -561,7 +581,7 @@ def render_tester_page(version):
     try:
         record = store.get_post(version)
     except Exception as e:
-        print(f"CultureBridge get_post error: {type(e).__name__}: {e}")
+        print(f"CultureBridge get_post error: {type(e).__name__}")
         record = None
 
     if not record or not record.get("post"):
@@ -575,6 +595,7 @@ def render_tester_page(version):
     st.subheader(t("tester_title"))
     st.write(t("tester_intro"))
 
+    st.info(t("result_demo") if record.get("model") == "curated-demo" else t("result_ai"))
     render_post_card(record["post"])
 
     st.markdown("#### " + t("tester_form_title"))
@@ -588,6 +609,7 @@ def render_tester_page(version):
         ),
     )
 
+    feedback_export()
     st.divider()
     st.caption(t("tester_footer"))
     st.stop()
@@ -660,15 +682,15 @@ def apply_result(raw, kind, meta):
     ss["cb_rationale"] = rationale
     ss["cb_review"] = review
     ss["cb_version"] = core.new_version()
-    # base 只在“生成 / 追加要求”时变化；手动修改产生的新版本不会改变它，
-    # 所以审核勾选等控件状态不会因为分享链接而丢失
+    # A stable generation base plus a text digest scopes review widgets to exact text.
     ss["cb_base"] = ss["cb_version"]
     ss["cb_topic"] = topic_id
     ss["cb_platform"] = platform_id
     ss["cb_style"] = style_id
-    ss["cb_count"] = ss.get("cb_count", 0) + 1
-
-    memory_incr()
+    ss["cb_result_mode"] = "demo" if kind == "demo" else "ai"
+    if kind != "demo":
+        ss["cb_count"] = ss.get("cb_count", 0) + 1
+        memory_incr()
     log_generation(kind, post)
     persisted_today.clear()
 
@@ -683,12 +705,12 @@ def log_generation(kind, post):
                 "platform": ss.get("cb_platform", ""),
                 "style": ss.get("cb_style", ""),
                 "kind": kind,
-                "model": MODEL_NAME,
+                "model": "curated-demo" if ss.get("cb_result_mode") == "demo" else MODEL_NAME,
                 "post": post,
             }
         )
     except Exception as e:
-        print(f"CultureBridge log error: {type(e).__name__}: {e}")
+        print(f"CultureBridge log error: {type(e).__name__}")
         ss["cb_store_warn"] = True
 
 
@@ -705,6 +727,15 @@ def ensure_committed_version():
 with left:
     st.markdown('<span class="step-label">STEP 1</span>', unsafe_allow_html=True)
     st.markdown("### " + t("step1_title"))
+
+    st.selectbox(t("topic_label"), [t("tea_topic")])
+    mode = st.radio(t("mode_label"), ["ai", "demo"],
+                    index=0 if API_KEY else 1,
+                    format_func=lambda value: t("mode_" + value), key="cb_mode")
+    if mode == "demo":
+        st.info(t("demo_notice"))
+    elif not API_KEY:
+        st.warning(t("no_api_key"))
 
     angle_id = st.selectbox(
         t("angle_label"),
@@ -731,7 +762,7 @@ with left:
     ).strip()
 
     remaining_session, remaining_daily = quota_state()
-    quota_exhausted = remaining_session <= 0 or remaining_daily <= 0
+    quota_exhausted = mode == "ai" and (remaining_session <= 0 or remaining_daily <= 0)
 
     generate = st.button(
         t("generate_btn"),
@@ -740,9 +771,9 @@ with left:
         **stretch_kwargs(st.button),
     )
 
-    if remaining_session <= 0:
+    if mode == "ai" and remaining_session <= 0:
         st.warning(t("quota_session_used"))
-    elif remaining_daily <= 0:
+    elif mode == "ai" and remaining_daily <= 0:
         st.warning(t("quota_daily_used"))
     else:
         st.caption(t("generate_caption"))
@@ -755,7 +786,13 @@ with left:
         action = ("refine", ss.pop("cb_pending"))
 
     if action and not quota_exhausted:
-        if not API_KEY:
+        if mode == "demo":
+            if action[0] == "generate":
+                apply_result(demo_result(angle_id, platform_id, style_id), "demo",
+                             (angle_id, platform_id, style_id))
+            else:
+                st.info(t("demo_refine"))
+        elif not API_KEY:
             st.error(t("no_api_key"))
         else:
             user_prompt = None
@@ -820,7 +857,10 @@ with right:
     if not ss.get("cb_version"):
         st.info(t("post_empty"))
     else:
+        st.info(t("result_demo") if ss.get("cb_result_mode") == "demo" else t("result_ai"))
         current_text = ss.get("cb_post_edit") or ""
+        if current_text.strip() != (ss.get("cb_ai_post") or "").strip():
+            st.info(t("edit_context_stale"))
 
         render_post_card(current_text)
 
@@ -854,7 +894,7 @@ with right:
             if col.button(
                 preset[ss.get("ui_lang", "zh")],
                 key=f"refine_{preset_id}",
-                disabled=quota_exhausted,
+                disabled=quota_exhausted or mode == "demo",
                 **stretch_kwargs(st.button),
             ):
                 ss["cb_pending"] = ("preset", preset_id)
@@ -870,7 +910,7 @@ with right:
         if st.button(
             t("refine_apply"),
             key="refine_custom_btn",
-            disabled=quota_exhausted or not custom_instruction,
+            disabled=quota_exhausted or mode == "demo" or not custom_instruction,
         ):
             ss["cb_pending"] = ("custom", custom_instruction)
             st.rerun()
@@ -899,6 +939,10 @@ version = ss.get("cb_version", "")
 base = ss.get("cb_base", version)
 text_now = (ss.get("cb_post_edit") or "").strip()
 has_post = bool(version and text_now)
+# Audit widgets belong to the exact text, including manual edits.
+base = base if text_now == (ss.get("cb_ai_post") or "").strip() else (
+    base + "_" + hashlib.sha256(text_now.encode()).hexdigest()[:12]
+)
 
 
 # ---------- 文化事实审核 ----------
@@ -911,7 +955,12 @@ with tab_review:
         st.info(t("review_empty"))
     else:
         lang = ss.get("ui_lang", "zh")
-
+        st.markdown("#### " + t("background_title"))
+        st.write(LENS[ss.get("cb_topic", "ritual")][lang])
+        st.caption(t("background_note"))
+        st.markdown("#### " + t("strategy_title"))
+        st.write(ss.get("cb_rationale") or t("none_rationale"))
+        st.caption(t("strategy_note"))
         st.markdown("#### " + t("risk_title"))
         for risk in core.detect_risks(text_now, lang):
             st.warning(risk)
@@ -974,6 +1023,8 @@ with tab_review:
                 st.warning(t("verify_open_claims", n=len(open_claims)))
             elif not checked_titles:
                 st.warning(t("verify_no_sources"))
+            elif (not claims or text_now != (ss.get("cb_ai_post") or "").strip()) and not reviewer_note.strip():
+                st.warning(t("verify_blocked"))
             else:
                 st.success(t("verify_done"))
         elif verification == "partial":
@@ -981,7 +1032,14 @@ with tab_review:
         else:
             st.warning(t("verify_pending"))
 
-        if st.button(t("save_review_btn")):
+        invalid_verification = verification == "verified" and (
+            bool(open_claims) or not checked_titles or
+            (not claims and not reviewer_note.strip()) or
+            (text_now != (ss.get("cb_ai_post") or "").strip() and not reviewer_note.strip())
+        )
+        if invalid_verification:
+            st.warning(t("verify_blocked"))
+        if st.button(t("save_review_btn")) and not invalid_verification:
             try:
                 store.save_review(
                     {
@@ -1000,7 +1058,7 @@ with tab_review:
                 )
                 st.success(t("review_saved"))
             except Exception as e:
-                print(f"CultureBridge review save error: {type(e).__name__}: {e}")
+                print(f"CultureBridge review save error: {type(e).__name__}")
                 st.error(t("review_save_failed"))
 
 
@@ -1016,7 +1074,9 @@ with tab_test:
         st.markdown("#### " + t("share_title"))
         st.write(t("share_intro"))
 
-        if st.button(t("share_btn"), key="share_btn"):
+        if not APP_URL:
+            st.info(t("share_url_missing"))
+        if st.button(t("share_btn"), key="share_btn", disabled=not APP_URL):
             ss["cb_share_version"] = ensure_committed_version()
 
         share_version = ss.get("cb_share_version")
@@ -1044,6 +1104,7 @@ with tab_test:
                     ss.get("cb_platform", ""),
                 ),
             )
+        feedback_export()
 
 
 # ---------- 反馈概览 ----------
@@ -1054,7 +1115,7 @@ with tab_overview:
     try:
         all_rows = load_feedback()
     except Exception as e:
-        print(f"CultureBridge load feedback error: {type(e).__name__}: {e}")
+        print(f"CultureBridge load feedback error: {type(e).__name__}")
         all_rows = []
         st.warning(t("overview_load_failed"))
 
@@ -1081,7 +1142,10 @@ with tab_overview:
             interest = core.mean_score(rows, "interest")
             understanding = core.mean_score(rows, "understanding")
             learn_more = core.mean_score(rows, "learn_more")
+            respect = core.mean_score(rows, "respect")
 
+            st.metric(t("metric_respect"), str(respect) + " / 5")
+            st.caption(t("respect_legacy"))
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(t("metric_count"), count)
             c2.metric(t("metric_interest"), f"{interest} / 5")
@@ -1089,10 +1153,11 @@ with tab_overview:
             c4.metric(t("metric_learn_more"), f"{learn_more} / 5")
 
             chart_df = pd.DataFrame(
-                {t("chart_avg"): [interest, understanding, learn_more]},
+                {t("chart_avg"): [interest, understanding, respect, learn_more]},
                 index=[
                     t("chart_interest"),
                     t("chart_understanding"),
+                    t("metric_respect"),
                     t("chart_learn_more"),
                 ],
             )
@@ -1114,6 +1179,7 @@ with tab_overview:
                             "interest": t("chart_interest"),
                             "understanding": t("chart_understanding"),
                             "learn_more": t("chart_learn_more"),
+                            "respect": t("metric_respect"),
                         }
                     )
                 )
@@ -1142,7 +1208,7 @@ with tab_overview:
                         data = loader()
                     except Exception as e:
                         print(f"CultureBridge admin load error: "
-                              f"{type(e).__name__}: {e}")
+                              f"{type(e).__name__}")
                         data = []
                         st.warning(t("overview_load_failed"))
 

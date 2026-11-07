@@ -9,6 +9,9 @@
 
 import csv
 import re
+import threading
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,7 +24,7 @@ GENERATION_FIELDS = [
 
 FEEDBACK_FIELDS = [
     "created_at", "post_version", "topic", "platform", "lang", "post_text",
-    "interest", "understanding", "learn_more", "confusing_part", "comment",
+    "interest", "understanding", "respect", "learn_more", "confusing_part", "comment",
 ]
 
 REVIEW_FIELDS = [
@@ -32,6 +35,8 @@ REVIEW_FIELDS = [
 
 # 这些字段保存的是短帖原文，写入时不加转义前缀，避免读回来时文本被改动。
 # 导出 CSV 时由 core.rows_to_csv_bytes 统一做公式注入防护。
+_LOCAL_LOCK = threading.RLock()
+
 RAW_TEXT_FIELDS = {"post", "post_text"}
 
 
@@ -67,30 +72,45 @@ class LocalStore:
         if not path.exists():
             return []
         try:
-            with open(path, "r", encoding="utf-8-sig", newline="") as f:
-                return list(csv.DictReader(f))
-        except (OSError, csv.Error):
-            return []
+            with _LOCAL_LOCK, open(path, "r", encoding="utf-8-sig", newline="") as f:
+                return list(csv.DictReader(f, strict=True))
+        except (OSError, csv.Error) as e:
+            raise StoreError("local read failed") from e
 
     @staticmethod
-    def _append(path, fields, row):
+    def _append_unlocked(path, fields, row):
         row = dict(row)
         row.setdefault("created_at", now_iso())
 
         use_fields = fields
         exists = path.exists() and path.stat().st_size > 0
 
-        # 文件已存在时沿用它原来的表头，避免旧文件与新列错位
+        # Preserve existing columns and rows; atomically add new schema fields.
         if exists:
             try:
                 with open(path, "r", encoding="utf-8-sig", newline="") as f:
                     header = next(csv.reader(f), None)
                 if header:
-                    use_fields = header
-            except (OSError, csv.Error):
-                pass
+                    missing = [field for field in fields if field not in header]
+                    if missing:
+                        existing = LocalStore._read(path)
+                        use_fields = header + missing
+                        fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".csv")
+                        try:
+                            with os.fdopen(fd, "w", encoding="utf-8-sig", newline="") as output:
+                                writer = csv.DictWriter(output, fieldnames=use_fields)
+                                writer.writeheader()
+                                writer.writerows(existing)
+                            os.replace(temporary, path)
+                        finally:
+                            if os.path.exists(temporary):
+                                os.unlink(temporary)
+                    else:
+                        use_fields = header
+            except (OSError, csv.Error) as e:
+                raise StoreError("local schema migration failed") from e
 
-        if "timestamp" in use_fields and "created_at" not in use_fields:
+        if "timestamp" in use_fields:
             row.setdefault("timestamp", row["created_at"])
 
         clean = {
@@ -108,6 +128,11 @@ class LocalStore:
                 writer.writerow(clean)
         except OSError as e:
             raise StoreError("local write failed") from e
+
+    @staticmethod
+    def _append(path, fields, row):
+        with _LOCAL_LOCK:
+            LocalStore._append_unlocked(path, fields, row)
 
     # ---- 对外接口 ----
 
@@ -214,7 +239,7 @@ class SupabaseStore:
         rows = self._select(
             "generations",
             {
-                "select": "version,topic,platform,style,kind,post",
+                "select": "version,topic,platform,style,kind,model,post",
                 "version": f"eq.{version}",
                 "order": "id.desc",
                 "limit": 1,

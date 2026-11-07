@@ -57,6 +57,7 @@ def h(tmp_path, monkeypatch):
                  "CULTUREBRIDGE_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("APP_URL", "https://example.streamlit.app")
 
     app = tmp_path / "app.py"
     shutil.copy(APP_SRC, app)
@@ -268,11 +269,13 @@ def test_review_state_resets_for_new_version(h):
     ("APITimeoutError", "err_timeout"),
     ("APIConnectionError", "err_conn"),
 ])
-def test_model_errors_show_friendly_message_and_cost_nothing(h, exc_name, key):
+def test_model_errors_show_friendly_message_and_cost_nothing(h, exc_name, key, capsys):
     h.openai.responses.append(getattr(h.openai, exc_name)("boom secret-token"))
     h.run(clicks=[zh("generate_btn")])
     assert zh(key) in h.out["error"]
     assert all("secret-token" not in e for e in h.out["error"])
+    captured = capsys.readouterr()
+    assert "secret-token" not in captured.out + captured.err
     assert h.session_state.get("cb_count", 0) == 0
     assert rows(h.tmp / "generations.csv") == []
 
@@ -290,8 +293,10 @@ def test_empty_model_reply_and_unknown_error(h):
 def test_missing_api_key_message(h, monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY")
     h.run(clicks=[zh("generate_btn")])
-    assert zh("no_api_key") in h.out["error"]
+    assert h.session_state["cb_result_mode"] == "demo"
+    assert zh("result_demo") in h.out["info"]
     assert h.openai.calls == []
+    assert h.session_state.get("cb_count", 0) == 0
 
 
 def test_daily_limit_blocks_further_generation(h, monkeypatch):
@@ -324,17 +329,17 @@ def test_overview_shows_metrics_and_admin_gate(h, monkeypatch):
     assert (zh("metric_count"), 1) in h.out["metric"]
     assert (zh("metric_interest"), "4.0 / 5") in h.out["metric"]
     assert zh("sample_tiny", n=1) in h.out["caption"]
-    assert h.out["download"] == []                          # 未输入口令，不展示
+    assert [label for label, _ in h.out["download"]] == [zh("export_own")]  # only own session
 
     h.inputs[zh("admin_password")] = "wrong"
     h.run()
-    assert zh("admin_wrong") in h.out["error"] and h.out["download"] == []
+    assert zh("admin_wrong") in h.out["error"] and len(h.out["download"]) == 1
 
     h.inputs[zh("admin_password")] = "s3cret"
     h.run()
     names = [label for label, _ in h.out["download"]]
     assert zh("admin_download", name="feedback.csv") in names
-    assert v in h.out["download"][0][1].decode("utf-8-sig")
+    assert v in h.out["download"][-1][1].decode("utf-8-sig")
 
 
 def test_admin_not_configured_hides_data(h):
@@ -344,7 +349,7 @@ def test_admin_not_configured_hides_data(h):
     assert h.out["download"] == []
 
 
-def test_review_is_saved_under_committed_edited_version_and_ticks_survive(h):
+def test_review_is_saved_under_edited_version_and_old_ticks_do_not_apply(h):
     generate(h)
     base = h.session_state["cb_base"]
     h.inputs[f"cb_claim_{base}_0"] = True
@@ -358,12 +363,76 @@ def test_review_is_saved_under_committed_edited_version_and_ticks_survive(h):
     assert saved_version != base                           # 已落成新的“修改”版本
 
     assert h.session_state["cb_base"] == base               # 控件 key 不变
-    assert h.session_state[f"cb_claim_{base}_0"] is True    # 已勾选的条目没有丢
+    assert row["claims_confirmed"] == ""  # old checks do not verify edited text
     h.run(clicks=["share_btn"])
-    assert h.session_state[f"cb_claim_{base}_0"] is True
+    assert rows(h.tmp / "fact_review_log.csv")[0]["verification_status"] == "pending"
 
 
 def test_overlong_model_reply_is_truncated(h):
     generate(h, "【English Post】\n" + "tea " * 2000 + "\n【中文翻译】\n无")
     assert len(h.session_state["cb_post_edit"]) <= 1200
     assert not h.out["error"]
+
+
+def test_explicit_ai_without_key_does_not_fake_success(h, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    h.inputs["cb_mode"] = "ai"
+    h.run(clicks=[zh("generate_btn")])
+    assert zh("no_api_key") in h.out["error"]
+    assert not h.session_state.get("cb_version")
+    assert h.openai.calls == []
+
+
+def test_verification_cannot_save_open_claims(h):
+    generate(h)
+    base = h.session_state["cb_base"]
+    h.inputs[f"cb_verification_{base}"] = "verified"
+    h.run(clicks=[zh("save_review_btn")])
+    assert rows(h.tmp / "fact_review_log.csv") == []
+    assert zh("verify_blocked") in h.out["warning"]
+
+
+def test_verification_requires_sources_then_can_save(h):
+    generate(h)
+    base = h.session_state["cb_base"]
+    h.inputs.update({f"cb_verification_{base}": "verified",
+                     f"cb_claim_{base}_0": True, f"cb_claim_{base}_1": True})
+    h.run(clicks=[zh("save_review_btn")])
+    assert rows(h.tmp / "fact_review_log.csv") == []
+    h.inputs[f"cb_checked_{base}"] = ["Smithsonian: Tea Culture in China"]
+    h.run(clicks=[zh("save_review_btn")])
+    assert rows(h.tmp / "fact_review_log.csv")[0]["verification_status"] == "verified"
+
+
+def test_respect_and_private_export_survive_store_failure(h, monkeypatch):
+    generate(h)
+    monkeypatch.setattr(LocalStore, "save_feedback", lambda *a: (_ for _ in ()).throw(OSError()))
+    h.inputs.update({zh("consent"): True, zh("q_respect"): 5, zh("q_comment"): "=private"})
+    h.run(clicks=[zh("submit_feedback")])
+    data = dict(h.out["download"])[zh("export_own")].decode("utf-8-sig")
+    assert "respect" in data and "'=private" in data
+    assert h.session_state["cb_own_feedback"][0]["respect"] == 5
+    h.new_visitor()
+    h.run()
+    assert h.out["download"] == []
+
+
+def test_missing_public_url_does_not_share_another_deployment(h, monkeypatch):
+    monkeypatch.delenv("APP_URL")
+    generate(h)
+    h.run(clicks=["share_btn"])
+    assert not h.session_state.get("cb_share_version")
+    assert zh("share_url_missing") in h.out["info"]
+
+
+def test_malformed_model_reply_does_not_replace_previous_result(h):
+    generate(h)
+    old_version = h.session_state['cb_version']
+    h.openai.responses.append('Service temporarily unavailable')
+    h.run(clicks=[zh('generate_btn')])
+    assert zh('err_other') in h.out['error']
+    assert h.session_state['cb_version'] == old_version
+    h.openai.responses.append('【English Post】\n\n【中文翻译】\n没有英文')
+    h.run(clicks=[zh('generate_btn')])
+    assert zh('err_other') in h.out['error']
+    assert h.session_state['cb_count'] == 1

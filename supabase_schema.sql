@@ -61,3 +61,7 @@ create index if not exists fact_reviews_post_version_idx on public.fact_reviews 
 alter table public.generations  enable row level security;
 alter table public.feedback     enable row level security;
 alter table public.fact_reviews enable row level security;
+
+-- Phase 3.4: additive migration; old responses stay unknown, not fabricated.
+alter table public.feedback add column if not exists respect smallint
+    check (respect between 1 and 5);
