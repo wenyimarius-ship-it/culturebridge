@@ -181,3 +181,9 @@ tests/                 单元测试与冒烟测试
 - **部署与数据回收**：把应用部署到 Streamlit Cloud，并排查、解决反馈数据无法留存的问题（见上文"数据持久化"）。
 
 项目持续迭代中，目前还没有系统的真实用户测试数据。
+
+## 本轮持久化接入进度
+
+现有免费项目已恢复，generations、feedback、fact_reviews 表和 RLS 已建立。应用新增三表只读健康检查，只有检查成功才显示 Supabase 已连接；统计只发送持久保存成功的聚合事件，不含短帖、反馈正文或版本标识。需要在 Streamlit Secrets 配置 SUPABASE_URL 和服务端 SUPABASE_KEY 后重启，不能用前端 publishable key 代替。密钥不提交源码。
+
+共享实验云端副本后端也保存在本仓库的 supabase/functions/ember-vault/，实验数据与 CultureBridge 的三张表分开。使用恢复码做独立副本访问控制，所有公开 Data API 访问仍由 RLS 拒绝。

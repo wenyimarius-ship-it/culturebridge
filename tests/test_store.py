@@ -153,3 +153,17 @@ def test_supabase_list_feedback_filters_by_version():
     assert sess.calls[0][2]["params"]["post_version"] == "eq.v1-aaaaaa"
     s.list_feedback()
     assert "post_version" not in sess.calls[1][2]["params"]
+
+
+def test_healthcheck_reads_each_required_table_without_writes():
+    sess = FakeSession(FakeResponse(200, []))
+    store = SupabaseStore("https://example.supabase.co", "server-key", session=sess)
+    assert store.healthcheck() is True
+    assert [url.rsplit("/", 1)[-1] for _, url, _ in sess.calls] == ["generations", "feedback", "fact_reviews"]
+    assert all(method == "GET" and kw["params"] == {"select": "id", "limit": 1} for method, _, kw in sess.calls)
+
+
+def test_healthcheck_rejects_missing_permission():
+    store = SupabaseStore("https://example.supabase.co", "server-key", session=FakeSession(FakeResponse(403)))
+    with pytest.raises(StoreError):
+        store.healthcheck()

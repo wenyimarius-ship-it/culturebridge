@@ -20,6 +20,7 @@ STRINGS = {
         "quota_session_used": "本次访问的生成次数已用完，刷新页面可重新开始。",
         "quota_daily_used": "今日全站的生成额度已用完，请明天再来。",
         "storage_supabase": "💾 数据存储：Supabase（持久保存）",
+        "storage_unavailable": "云端存储连接失败。当前不要提交反馈，请稍后重试。",
         "storage_local": "💾 数据存储：本地临时文件（云端重启后可能清空）",
         "store_warn": "这一版没能记录到存储中，但不影响继续使用。",
 
@@ -203,6 +204,7 @@ STRINGS = {
         "quota_daily_used": "Today's site-wide generation quota is used up. "
                             "Please come back tomorrow.",
         "storage_supabase": "💾 Storage: Supabase (persistent)",
+        "storage_unavailable": "Cloud storage is unavailable. Please wait before submitting feedback.",
         "storage_local": "💾 Storage: temporary local files "
                          "(may be wiped when the cloud app restarts)",
         "store_warn": "This version could not be saved to storage, but you "

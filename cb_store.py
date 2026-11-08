@@ -199,6 +199,12 @@ class SupabaseStore:
 
     # ---- 对外接口 ----
 
+    def healthcheck(self):
+        """Check all required tables without writing data or returning feedback to the UI."""
+        for table in ("generations", "feedback", "fact_reviews"):
+            self._select(table, {"select": "id", "limit": 1})
+        return True
+
     def log_generation(self, row):
         self._insert("generations", row)
 

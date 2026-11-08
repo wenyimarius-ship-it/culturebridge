@@ -1,0 +1,5 @@
+project_id = "crgfsrfxnwyjcjgmvpjr"
+
+[functions.ember-vault]
+# Recovery capabilities are verified inside the function, not by JWT.
+verify_jwt = false

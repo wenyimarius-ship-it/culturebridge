@@ -20,6 +20,7 @@ from openai import (
 )
 
 import cb_core as core
+import cb_analytics
 from cb_store import make_store
 from i18n import translate
 
@@ -87,6 +88,23 @@ def get_store():
 
 
 store = get_store()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cloud_storage_health():
+    if store.kind != "supabase":
+        return False
+    try:
+        store.healthcheck()
+        return True
+    except Exception:
+        return False
+
+
+def track_saved(event):
+    traffic = "test" if st.query_params.get("analytics_test") == "1" else "live"
+    cb_analytics.track(event, store.kind, traffic)
+
 
 
 # =====================================================
@@ -540,6 +558,7 @@ def render_feedback_form(form_key, resolve):
                 "comment": comment.strip(),
             }
         )
+        track_saved("feedback_saved")
         load_feedback.clear()
         st.success(t("feedback_thanks"))
     except Exception as e:
@@ -615,7 +634,10 @@ with st.sidebar:
     show_quota(quota_slot)
 
     if store.kind == "supabase":
-        st.caption(t("storage_supabase"))
+        if cloud_storage_health():
+            st.caption(t("storage_supabase"))
+        else:
+            st.error(t("storage_unavailable"))
     else:
         st.caption(t("storage_local"))
 
@@ -687,6 +709,7 @@ def log_generation(kind, post):
                 "post": post,
             }
         )
+        track_saved("generation_saved")
     except Exception as e:
         print(f"CultureBridge log error: {type(e).__name__}: {e}")
         ss["cb_store_warn"] = True
@@ -998,6 +1021,7 @@ with tab_review:
                         "post_text": text_now,
                     }
                 )
+                track_saved("review_saved")
                 st.success(t("review_saved"))
             except Exception as e:
                 print(f"CultureBridge review save error: {type(e).__name__}: {e}")
