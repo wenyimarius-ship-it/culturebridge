@@ -97,7 +97,13 @@ def cloud_storage_health(supabase_url, supabase_key):
     if connection.kind != "supabase":
         return False
     try:
-        connection.healthcheck()
+        # A running Streamlit process can retain an older imported store class
+        # while reloading app.py. Its read interface is already compatible.
+        if hasattr(connection, "healthcheck"):
+            connection.healthcheck()
+        else:
+            for table in ("generations", "feedback", "fact_reviews"):
+                connection._select(table, {"select": "id", "limit": 1})
         return True
     except Exception:
         return False
@@ -639,7 +645,12 @@ with st.sidebar:
         if cloud_storage_health(SUPABASE_URL, SUPABASE_KEY):
             st.caption(t("storage_supabase"))
         else:
-            st.error(t("storage_unavailable"))
+            message = t("storage_unavailable")
+            if message == "storage_unavailable":
+                message = ("Cloud storage is unavailable. Please wait before submitting feedback."
+                           if st.session_state.get("ui_lang") == "en"
+                           else "云端存储连接失败。当前不要提交反馈，请稍后重试。")
+            st.error(message)
     else:
         st.caption(t("storage_local"))
 
