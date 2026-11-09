@@ -21,6 +21,7 @@ from openai import (
 
 import cb_core as core
 import cb_analytics
+from cb_config import configuration_issue
 from cb_store import make_store
 from i18n import translate
 
@@ -93,9 +94,12 @@ store = get_store(SUPABASE_URL, SUPABASE_KEY)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def cloud_storage_health(supabase_url, supabase_key):
+    issue = configuration_issue(supabase_url, supabase_key)
+    if issue:
+        return issue
     connection = get_store(supabase_url, supabase_key)
     if connection.kind != "supabase":
-        return False
+        return "not_configured"
     try:
         # A running Streamlit process can retain an older imported store class
         # while reloading app.py. Its read interface is already compatible.
@@ -104,9 +108,18 @@ def cloud_storage_health(supabase_url, supabase_key):
         else:
             for table in ("generations", "feedback", "fact_reviews"):
                 connection._select(table, {"select": "id", "limit": 1})
-        return True
-    except Exception:
-        return False
+        return "ready"
+    except Exception as error:
+        message = str(error)
+        if "HTTP 401" in message:
+            return "authentication_failed"
+        if "HTTP 403" in message:
+            return "permission_denied"
+        if "HTTP 404" in message:
+            return "table_not_found"
+        if "network error" in message:
+            return "network_error"
+        return "unavailable"
 
 
 def track_saved(event):
@@ -642,7 +655,8 @@ with st.sidebar:
     show_quota(quota_slot)
 
     if store.kind == "supabase":
-        if cloud_storage_health(SUPABASE_URL, SUPABASE_KEY):
+        health = cloud_storage_health(SUPABASE_URL, SUPABASE_KEY)
+        if health == "ready":
             st.caption(t("storage_supabase"))
         else:
             message = t("storage_unavailable")
@@ -651,6 +665,16 @@ with st.sidebar:
                            if st.session_state.get("ui_lang") == "en"
                            else "云端存储连接失败。当前不要提交反馈，请稍后重试。")
             st.error(message)
+            hints = {
+                "invalid_url": "数据库地址格式不正确：请使用项目根地址，不要包含反引号、空格或额外路径。",
+                "invalid_server_key": "当前不是可用的服务端密钥：请使用 secret key 或 service_role，不要使用 publishable / anon key 或示例占位文字。",
+                "authentication_failed": "数据库认证失败：请检查服务端密钥是否完整且属于当前项目。",
+                "permission_denied": "数据库权限不足：请检查是否使用了正确的服务端密钥。",
+                "table_not_found": "数据库表未找到：请核对项目地址和已执行的建表脚本。",
+                "network_error": "应用暂时无法连接数据库，请检查地址格式及网络状态。",
+            }
+            if health in hints:
+                st.caption(hints[health])
     else:
         st.caption(t("storage_local"))
 
