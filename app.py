@@ -83,19 +83,21 @@ MAX_POST_CHARS = 1200
 
 
 @st.cache_resource
-def get_store():
-    return make_store(BASE_DIR, SUPABASE_URL, SUPABASE_KEY)
+def get_store(supabase_url, supabase_key):
+    """Include configuration in the resource cache key so Secrets changes reconnect."""
+    return make_store(BASE_DIR, supabase_url, supabase_key)
 
 
-store = get_store()
+store = get_store(SUPABASE_URL, SUPABASE_KEY)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def cloud_storage_health():
-    if store.kind != "supabase":
+def cloud_storage_health(supabase_url, supabase_key):
+    connection = get_store(supabase_url, supabase_key)
+    if connection.kind != "supabase":
         return False
     try:
-        store.healthcheck()
+        connection.healthcheck()
         return True
     except Exception:
         return False
@@ -634,7 +636,7 @@ with st.sidebar:
     show_quota(quota_slot)
 
     if store.kind == "supabase":
-        if cloud_storage_health():
+        if cloud_storage_health(SUPABASE_URL, SUPABASE_KEY):
             st.caption(t("storage_supabase"))
         else:
             st.error(t("storage_unavailable"))
